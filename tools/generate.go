@@ -38,8 +38,8 @@ type PageData struct {
 }
 
 const (
-	jsonFile  = "m3u8_results.json"
-	outputDir = "tools/v"
+	jsonFile  = "../m3u8_results.json"
+	outputDir = "../v"
 	siteName  = "MyVideos"
 )
 
@@ -137,7 +137,7 @@ const videoHtmlTemplate = `<!DOCTYPE html>
           </div>
         </div>
 
-        <!-- 2. ANUNCIO ESTRATÉGICO: Banner 300x250 al lado del reproductor (o debajo en móviles) -->
+        <!-- 2. ANUNCIO ESTRATÉGICO: Banner 300x250 al lado del reproductor -->
         <div class="strategic-ad-box">
           <script>
             atOptions = {
@@ -152,7 +152,7 @@ const videoHtmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
-      <!-- 3. ANUNCIOS ESTRATÉGICOS: Native Banner -->
+      <!-- 3. NATIVE BANNER (ARRIBA) -->
       <div class="native-banner-container" style="margin: 24px 0; text-align: center;">
         <script async="async" data-cfasync="false" src="https://pl20016627.profitableratecpmnetwork.com/c14d6221cacd09bae7934140e373893e/invoke.js"></script>
         <div id="container-c14d6221cacd09bae7934140e373893e"></div>
@@ -170,6 +170,12 @@ const videoHtmlTemplate = `<!DOCTYPE html>
         </div>
       </div>
 
+      <!-- 4. NATIVE BANNER (ABAJO - NUEVO) -->
+      <div class="native-banner-container-bottom" style="margin: 30px 0; text-align: center;">
+        <script async="async" data-cfasync="false" src="https://pl20016627.profitableratecpmnetwork.com/c14d6221cacd09bae7934140e373893e/invoke.js"></script>
+        <div id="container-c14d6221cacd09bae7934140e373893e-bottom"></div>
+      </div>
+
       <h2 class="related-title">Videos recomendados</h2>
       <div id="related-grid" class="grid"></div>
     </section>
@@ -183,10 +189,10 @@ const videoHtmlTemplate = `<!DOCTYPE html>
   </script>
   <script src="../../main.js"></script>
 
-  <!-- 4. SOCIAL BAR -->
+  <!-- 5. SOCIAL BAR -->
   <script src="https://pl32079806.profitableratecpmnetwork.com/5c/df/d8/5cdfd8d253e82a91556fb7c9b8240ffc.js"></script>
 
-  <!-- 5. POPUNDER -->
+  <!-- 6. POPUNDER -->
   <script src="https://pl29236831.profitableratecpmnetwork.com/7f/14/36/7f14362c8d3ff443959fa5e3e80d01d8.js"></script>
 </body>
 </html>`
@@ -274,5 +280,5 @@ func main() {
 		}
 	}
 
-	fmt.Printf("✅ Se regeneraron %d páginas de detalles con todos los anuncios integrados estratégicamente.\n", len(videoList))
+	fmt.Printf("✅ Se regeneraron %d páginas con Native Banner arriba y abajo en Details.\n", len(videoList))
 }
