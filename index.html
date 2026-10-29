@@ -3,69 +3,109 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Plataforma de Video</title>
-  <!-- HLS.js para reproducción de streams .m3u8 en navegadores que no lo soportan nativamente -->
-  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: system-ui, -apple-system, sans-serif; background-color: #0f172a; color: #f8fafc; padding: 20px; }
-    header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 1px solid #334155; margin-bottom: 20px; }
-    header h1 { font-size: 1.5rem; cursor: pointer; color: #38bdf8; }
-    
-    /* Vistas */
-    .hidden { display: none !important; }
+  <title>MyVideos · Plataforma de Video Premium</title>
+  <meta name="description" content="Disfruta de los mejores videos en streaming de alta calidad.">
+  <meta name="theme-color" content="#0a0d14">
 
-    /* Layout Grid */
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
-    .card { background: #1e293b; border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; border: 1px solid #334155; }
-    .card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }
-    .card-thumb { width: 100%; height: 140px; background: #000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 3rem; }
-    .card-body { padding: 12px; }
-    .card-title { font-size: 0.95rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #f1f5f9; }
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="MyVideos">
+  <meta property="og:title" content="MyVideos · Plataforma de Video Premium">
+  <meta property="og:description" content="Disfruta de los mejores videos en streaming de alta calidad.">
+  <meta property="og:locale" content="es_ES">
 
-    /* Vista de Detalles */
-    .details-container { max-width: 1000px; margin: 0 auto; }
-    .video-wrapper { width: 100%; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 16px; position: relative; aspect-ratio: 16/9; }
-    video { width: 100%; height: 100%; display: block; }
-    .details-info { margin-bottom: 30px; }
-    .details-title { font-size: 1.4rem; font-weight: 700; margin-bottom: 12px; }
-    .quality-selector { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-    .btn-quality { background: #334155; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
-    .btn-quality.active, .btn-quality:hover { background: #0284c7; }
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="MyVideos · Plataforma de Video Premium">
+  <meta name="twitter:description" content="Disfruta de los mejores videos en streaming de alta calidad.">
 
-    /* Sección Relacionados */
-    .related-title { font-size: 1.2rem; font-weight: 600; margin-bottom: 16px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
-  </style>
+  <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-page="home">
 
   <header>
-    <h1 id="logo">MyVideos</h1>
-    <span id="nav-info"></span>
+    <a href="index.html" class="brand-link"><h1 id="logo">MyVideos</h1></a>
   </header>
 
   <main>
-    <!-- VISTA GRID -->
-    <section id="grid-view" class="grid"></section>
-
-    <!-- VISTA DETALLES -->
-    <section id="details-view" class="details-container hidden">
-      <div class="video-wrapper">
-        <video id="video-player" controls autoplay></video>
+    <section id="grid-view">
+      
+      <!-- 1. CARRUSEL HORIZONTAL SUPERIOR: 5 Banners 320x50 -->
+      <div class="ads-horizontal-scroll">
+        <div class="ad-item">
+          <script>
+            atOptions = { 'key' : 'f800ed383edcb23d085ab823bc318708', 'format' : 'iframe', 'height' : 50, 'width' : 320, 'params' : {} };
+          </script>
+          <script src="https://www.highrevenueformat.com/f800ed383edcb23d085ab823bc318708/invoke.js"></script>
+        </div>
+        <div class="ad-item">
+          <script>
+            atOptions = { 'key' : 'f800ed383edcb23d085ab823bc318708', 'format' : 'iframe', 'height' : 50, 'width' : 320, 'params' : {} };
+          </script>
+          <script src="https://www.highrevenueformat.com/f800ed383edcb23d085ab823bc318708/invoke.js"></script>
+        </div>
+        <div class="ad-item">
+          <script>
+            atOptions = { 'key' : 'f800ed383edcb23d085ab823bc318708', 'format' : 'iframe', 'height' : 50, 'width' : 320, 'params' : {} };
+          </script>
+          <script src="https://www.highrevenueformat.com/f800ed383edcb23d085ab823bc318708/invoke.js"></script>
+        </div>
+        <div class="ad-item">
+          <script>
+            atOptions = { 'key' : 'f800ed383edcb23d085ab823bc318708', 'format' : 'iframe', 'height' : 50, 'width' : 320, 'params' : {} };
+          </script>
+          <script src="https://www.highrevenueformat.com/f800ed383edcb23d085ab823bc318708/invoke.js"></script>
+        </div>
+        <div class="ad-item">
+          <script>
+            atOptions = { 'key' : 'f800ed383edcb23d085ab823bc318708', 'format' : 'iframe', 'height' : 50, 'width' : 320, 'params' : {} };
+          </script>
+          <script src="https://www.highrevenueformat.com/f800ed383edcb23d085ab823bc318708/invoke.js"></script>
+        </div>
       </div>
 
-      <div class="details-info">
-        <h2 id="video-title" class="details-title">Título del video</h2>
-        <p><strong>Calidades disponibles:</strong></p>
-        <div id="quality-buttons" class="quality-selector"></div>
+      <nav class="top-menu" id="top-menu"></nav>
+
+      <div class="search-bar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="m21 21-4.35-4.35"></path>
+        </svg>
+        <input type="search" id="search-input" placeholder="Buscar videos..." autocomplete="off">
       </div>
 
-      <!-- VIDEOS RELACIONADOS -->
-      <h3 class="related-title">Videos Relacionados</h3>
-      <div id="related-grid" class="grid"></div>
+      <!-- 2. NATIVE BANNER ESTRATÉGICO -->
+      <div class="native-banner-container" style="margin: 20px 0; text-align: center;">
+        <script async="async" data-cfasync="false" src="https://pl20016627.profitableratecpmnetwork.com/c14d6221cacd09bae7934140e373893e/invoke.js"></script>
+        <div id="container-c14d6221cacd09bae7934140e373893e"></div>
+      </div>
+
+      <div id="pagination-top" class="pagination"></div>
+      <div id="cards-grid" class="grid"></div>
+      <div id="pagination" class="pagination"></div>
     </section>
+
+    <!-- 3. BANNER 300x250 ESTRATÉGICO AL PIE DE PÁGINA -->
+    <div class="home-bottom-ad" style="display: flex; justify-content: center; margin-top: 40px;">
+      <script>
+        atOptions = {
+          'key' : '8457e95f3cec02708068cfc272643d8f',
+          'format' : 'iframe',
+          'height' : 250,
+          'width' : 300,
+          'params' : {}
+        };
+      </script>
+      <script src="https://www.highrevenueformat.com/8457e95f3cec02708068cfc272643d8f/invoke.js"></script>
+    </div>
   </main>
 
+  <div id="toast" class="toast"></div>
+
   <script src="main.js"></script>
+
+  <!-- 4. SOCIAL BAR -->
+  <script src="https://pl32079806.profitableratecpmnetwork.com/5c/df/d8/5cdfd8d253e82a91556fb7c9b8240ffc.js"></script>
+
+  <!-- 5. POPUNDER -->
+  <script src="https://pl29236831.profitableratecpmnetwork.com/7f/14/36/7f14362c8d3ff443959fa5e3e80d01d8.js"></script>
 </body>
 </html>
