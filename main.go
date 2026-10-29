@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,9 +36,51 @@ const (
 	m3u8JSONFile  = "m3u8_results.json"
 )
 
-// isVideoComplete: ya tiene todo lo que queremos (no hace falta reprocesar)
+// Regex para detectar timestamps Unix (10 dígitos) dentro de las URLs m3u8
+var timestampRegex = regexp.MustCompile(`[=,/_](\d{10})[=,/_]`)
+
+// isM3U8Expired verifica si la URL .m3u8 contiene un timestamp expirado comparado con el tiempo real (time.Now())
+func isM3U8Expired(m3u8URL string) bool {
+	matches := timestampRegex.FindAllStringSubmatch(m3u8URL, -1)
+	now := time.Now().Unix()
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			ts, err := strconv.ParseInt(match[1], 10, 64)
+			if err == nil {
+				// Si el timestamp extraído es menor al tiempo UNIX actual, ha expirado
+				if ts < now {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// cleanExpiredM3U8 elimina de un VideoResult todos los enlaces .m3u8 que hayan expirado
+func cleanExpiredM3U8(r *VideoResult) {
+	if r == nil || len(r.M3U8) == 0 {
+		return
+	}
+	var valid []string
+	for _, u := range r.M3U8 {
+		if !isM3U8Expired(u) {
+			valid = append(valid, u)
+		} else {
+			fmt.Printf("   🗑️ Enlace m3u8 expirado eliminado: %s\n", u)
+		}
+	}
+	r.M3U8 = valid
+}
+
+// isVideoComplete verifica si el video tiene título, imagen y al menos un M3U8 VÁLIDO (no expirado)
 func isVideoComplete(r *VideoResult) bool {
-	return r != nil && r.Title != "" && r.Image != "" && len(r.M3U8) > 0
+	if r == nil {
+		return false
+	}
+	cleanExpiredM3U8(r)
+	return r.Title != "" && r.Image != "" && len(r.M3U8) > 0
 }
 
 func main() {
@@ -56,12 +100,21 @@ func main() {
 
 	// ---- Cargar estado previo ----
 	results = loadExistingResults()
+
+	// Limpiar m3u8 expirados al iniciar
+	mu.Lock()
+	for _, r := range results {
+		cleanExpiredM3U8(r)
+	}
+	saveJSONLocked()
+	mu.Unlock()
+
 	existingURLs := loadExistingVideoURLs()
 	existingSet := make(map[string]bool, len(existingURLs))
 	for _, u := range existingURLs {
 		existingSet[u] = true
 	}
-	fmt.Printf("📂 URLs previas: %d | Videos ya en JSON: %d\n",
+	fmt.Printf("📂 URLs previas: %d | Videos ya en JSON con enlaces válidos: %d\n",
 		len(existingURLs), len(results))
 
 	// ---- Elegir modo ----
@@ -72,13 +125,13 @@ func main() {
 	case 1:
 		for _, u := range existingURLs {
 			if isVideoComplete(results[u]) {
-				fmt.Printf("⏭️  Completo: %s\n", u)
+				fmt.Printf("⏭️  Completo y vigente: %s\n", u)
 				continue
 			}
 			videoURLsToProcess = append(videoURLsToProcess, u)
 		}
 		if len(videoURLsToProcess) == 0 {
-			fmt.Println("✅ No hay URLs pendientes en video_urls.txt")
+			fmt.Println("✅ No hay URLs pendientes ni expiradas en video_urls.txt")
 			return
 		}
 	case 2:
@@ -114,6 +167,9 @@ func main() {
 					r = &VideoResult{}
 					results[currentVideo] = r
 				}
+				// Limpiar expirados
+				cleanExpiredM3U8(r)
+
 				exists := false
 				for _, u := range r.M3U8 {
 					if u == reqURL {
@@ -123,7 +179,7 @@ func main() {
 				}
 				if !exists {
 					r.M3U8 = append(r.M3U8, reqURL)
-					fmt.Printf("   🎬 [HLS] %s\n", reqURL)
+					fmt.Printf("   🎬 [HLS Nuevo] %s\n", reqURL)
 					_ = appendLine(m3u8TxtFile, currentVideo+"\t"+reqURL)
 					saveJSONLocked()
 					if notifyCh != nil {
@@ -168,7 +224,7 @@ func main() {
 // ------------------------------------------------------------
 func askMode() int {
 	fmt.Println("\n¿Qué quieres hacer?")
-	fmt.Println("  [1] Procesar las URLs existentes en video_urls.txt")
+	fmt.Println("  [1] Procesar las URLs existentes en video_urls.txt (reemplaza expirados)")
 	fmt.Println("  [2] Buscar nuevas URLs y procesarlas")
 	fmt.Print("Opción [1/2]: ")
 	var s string
@@ -323,11 +379,6 @@ func collectVideoURLs(page *rod.Page, listBaseURL, hrefBaseURL string, existingS
 
 // ------------------------------------------------------------
 // Fase 2: procesar un video
-//   - extrae lo que falte (título / imagen)
-//   - si ya tiene m3u8, no espera m3u8 nuevo
-//   - si no tiene m3u8, espera el m3u8
-//   - 5s antes del siguiente
-//
 // ------------------------------------------------------------
 func processVideo(page *rod.Page, videoURL string, idx, total int) {
 	fmt.Printf("\n[%d/%d] 🎥 %s\n", idx, total, videoURL)
@@ -338,13 +389,17 @@ func processVideo(page *rod.Page, videoURL string, idx, total int) {
 		r = &VideoResult{}
 		results[videoURL] = r
 	}
+
+	// Limpiar expirados antes de evaluar
+	cleanExpiredM3U8(r)
+
 	needsM3U8 := len(r.M3U8) == 0
 	needsTitle := r.Title == ""
 	needsImage := r.Image == ""
 	mu.Unlock()
 
 	if !needsM3U8 && !needsTitle && !needsImage {
-		fmt.Println("   ✅ Ya completo, se salta")
+		fmt.Println("   ✅ Ya completo y con m3u8 vigente, se salta")
 		return
 	}
 
@@ -396,18 +451,19 @@ func processVideo(page *rod.Page, videoURL string, idx, total int) {
 
 	// --- M3U8 ---
 	if !needsM3U8 {
-		fmt.Println("   ⏭️  M3U8 ya presente, no se espera")
+		fmt.Println("   ⏭️  M3U8 vigente ya presente, no se espera nuevo")
 		clearCurrent()
-		fmt.Println("   ⏳ Esperando 5s antes del siguiente video…")
-		time.Sleep(5 * time.Second)
+		fmt.Println("   ⏳ Esperando 8s antes del siguiente video…")
+		time.Sleep(8 * time.Second)
 		return
 	}
 
+	fmt.Println("   ⏳ Esperando/buscando nuevo enlace .m3u8 fresco...")
 	gotIt := false
 	select {
 	case <-localNotify:
 		gotIt = true
-		fmt.Println("   ✅ .m3u8 capturado automáticamente")
+		fmt.Println("   ✅ .m3u8 fresco capturado automáticamente")
 	case <-time.After(10 * time.Second):
 		fmt.Println("   ⏳ Sin .m3u8 tras 10s, intentando clic en Play…")
 		if err := clickPlay(page); err == nil {
@@ -416,7 +472,7 @@ func processVideo(page *rod.Page, videoURL string, idx, total int) {
 		select {
 		case <-localNotify:
 			gotIt = true
-			fmt.Println("   ✅ .m3u8 capturado tras clic")
+			fmt.Println("   ✅ .m3u8 fresco capturado tras clic")
 		case <-time.After(20 * time.Second):
 			fmt.Println("   ❌ Timeout esperando .m3u8")
 		}
@@ -426,7 +482,7 @@ func processVideo(page *rod.Page, videoURL string, idx, total int) {
 		mu.Lock()
 		n := len(results[videoURL].M3U8)
 		mu.Unlock()
-		fmt.Printf("   📊 Total m3u8: %d\n", n)
+		fmt.Printf("   📊 Total m3u8 vigentes: %d\n", n)
 	}
 
 	clearCurrent()
@@ -451,13 +507,11 @@ func extractTitle(page *rod.Page) string {
 	return ""
 }
 
-// extrae la URL absoluta del img dentro de div.video-pic
 func extractImage(page *rod.Page, videoURL string) string {
 	el, err := page.Timeout(8 * time.Second).Element("div.video-pic img")
 	if err != nil {
 		return ""
 	}
-	// Intenta src, luego data-src, data-original, srcset (lazy load)
 	for _, attr := range []string{"src", "data-src", "data-original", "data-lazy-src"} {
 		if v, e := el.Attribute(attr); e == nil && v != nil {
 			s := strings.TrimSpace(*v)
@@ -466,7 +520,6 @@ func extractImage(page *rod.Page, videoURL string) string {
 			}
 		}
 	}
-	// Fallback: srcset (primera URL)
 	if v, e := el.Attribute("srcset"); e == nil && v != nil {
 		first := strings.Split(strings.TrimSpace(*v), ",")[0]
 		first = strings.Fields(first)[0]
@@ -520,7 +573,6 @@ func appendLine(path, line string) error {
 	return err
 }
 
-// saveJSONLocked asume que mu está tomado.
 func saveJSONLocked() {
 	if len(results) == 0 {
 		return
