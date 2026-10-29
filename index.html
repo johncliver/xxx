@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plataforma de Video</title>
+  <!-- HLS.js para reproducción de streams .m3u8 en navegadores que no lo soportan nativamente -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background-color: #0f172a; color: #f8fafc; padding: 20px; }
+    header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 1px solid #334155; margin-bottom: 20px; }
+    header h1 { font-size: 1.5rem; cursor: pointer; color: #38bdf8; }
+    
+    /* Vistas */
+    .hidden { display: none !important; }
+
+    /* Layout Grid */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
+    .card { background: #1e293b; border-radius: 8px; overflow: hidden; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; border: 1px solid #334155; }
+    .card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5); }
+    .card-thumb { width: 100%; height: 140px; background: #000; display: flex; align-items: center; justify-content: center; color: #64748b; font-size: 3rem; }
+    .card-body { padding: 12px; }
+    .card-title { font-size: 0.95rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #f1f5f9; }
+
+    /* Vista de Detalles */
+    .details-container { max-width: 1000px; margin: 0 auto; }
+    .video-wrapper { width: 100%; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 16px; position: relative; aspect-ratio: 16/9; }
+    video { width: 100%; height: 100%; display: block; }
+    .details-info { margin-bottom: 30px; }
+    .details-title { font-size: 1.4rem; font-weight: 700; margin-bottom: 12px; }
+    .quality-selector { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .btn-quality { background: #334155; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+    .btn-quality.active, .btn-quality:hover { background: #0284c7; }
+
+    /* Sección Relacionados */
+    .related-title { font-size: 1.2rem; font-weight: 600; margin-bottom: 16px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1 id="logo">MyVideos</h1>
+    <span id="nav-info"></span>
+  </header>
+
+  <main>
+    <!-- VISTA GRID -->
+    <section id="grid-view" class="grid"></section>
+
+    <!-- VISTA DETALLES -->
+    <section id="details-view" class="details-container hidden">
+      <div class="video-wrapper">
+        <video id="video-player" controls autoplay></video>
+      </div>
+
+      <div class="details-info">
+        <h2 id="video-title" class="details-title">Título del video</h2>
+        <p><strong>Calidades disponibles:</strong></p>
+        <div id="quality-buttons" class="quality-selector"></div>
+      </div>
+
+      <!-- VIDEOS RELACIONADOS -->
+      <h3 class="related-title">Videos Relacionados</h3>
+      <div id="related-grid" class="grid"></div>
+    </section>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>

@@ -17,6 +17,7 @@ import (
 
 type VideoResult struct {
 	Title string   `json:"title"`
+	Image string   `json:"image"`
 	M3U8  []string `json:"m3u8"`
 }
 
@@ -32,6 +33,11 @@ const (
 	m3u8TxtFile   = "m3u8_results.txt"
 	m3u8JSONFile  = "m3u8_results.json"
 )
+
+// isVideoComplete: ya tiene todo lo que queremos (no hace falta reprocesar)
+func isVideoComplete(r *VideoResult) bool {
+	return r != nil && r.Title != "" && r.Image != "" && len(r.M3U8) > 0
+}
 
 func main() {
 	binPath := findBraveExe()
@@ -55,7 +61,7 @@ func main() {
 	for _, u := range existingURLs {
 		existingSet[u] = true
 	}
-	fmt.Printf("📂 URLs previas: %d | Videos con m3u8 ya capturado: %d\n",
+	fmt.Printf("📂 URLs previas: %d | Videos ya en JSON: %d\n",
 		len(existingURLs), len(results))
 
 	// ---- Elegir modo ----
@@ -65,8 +71,8 @@ func main() {
 	switch mode {
 	case 1:
 		for _, u := range existingURLs {
-			if r := results[u]; r != nil && len(r.M3U8) > 0 {
-				fmt.Printf("⏭️  Ya procesada: %s\n", u)
+			if isVideoComplete(results[u]) {
+				fmt.Printf("⏭️  Completo: %s\n", u)
 				continue
 			}
 			videoURLsToProcess = append(videoURLsToProcess, u)
@@ -317,22 +323,35 @@ func collectVideoURLs(page *rod.Page, listBaseURL, hrefBaseURL string, existingS
 
 // ------------------------------------------------------------
 // Fase 2: procesar un video
-//  1. navega
-//  2. extrae título
-//  3. espera el .m3u8 (auto o con fallback de clic)
-//  4. 5s antes del siguiente
+//   - extrae lo que falte (título / imagen)
+//   - si ya tiene m3u8, no espera m3u8 nuevo
+//   - si no tiene m3u8, espera el m3u8
+//   - 5s antes del siguiente
 //
 // ------------------------------------------------------------
 func processVideo(page *rod.Page, videoURL string, idx, total int) {
 	fmt.Printf("\n[%d/%d] 🎥 %s\n", idx, total, videoURL)
 
+	mu.Lock()
+	r := results[videoURL]
+	if r == nil {
+		r = &VideoResult{}
+		results[videoURL] = r
+	}
+	needsM3U8 := len(r.M3U8) == 0
+	needsTitle := r.Title == ""
+	needsImage := r.Image == ""
+	mu.Unlock()
+
+	if !needsM3U8 && !needsTitle && !needsImage {
+		fmt.Println("   ✅ Ya completo, se salta")
+		return
+	}
+
 	localNotify := make(chan struct{}, 1)
 	mu.Lock()
 	currentVideo = videoURL
 	notifyCh = localNotify
-	if results[videoURL] == nil {
-		results[videoURL] = &VideoResult{}
-	}
 	mu.Unlock()
 
 	page.MustNavigate("about:blank")
@@ -343,15 +362,47 @@ func processVideo(page *rod.Page, videoURL string, idx, total int) {
 	}
 	_ = page.Timeout(30 * time.Second).WaitLoad()
 
-	// --- Extraer título ---
-	title := extractTitle(page)
-	fmt.Printf("   📝 Título: %s\n", title)
-	mu.Lock()
-	results[videoURL].Title = title
-	saveJSONLocked()
-	mu.Unlock()
+	// --- Título ---
+	if needsTitle {
+		title := extractTitle(page)
+		fmt.Printf("   📝 Título: %s\n", title)
+		mu.Lock()
+		if title != "" {
+			results[videoURL].Title = title
+		}
+		saveJSONLocked()
+		mu.Unlock()
+	} else {
+		fmt.Println("   ⏭️  Título ya presente")
+	}
 
-	// --- Esperar el .m3u8: 10s auto, si no llega intentar clic ---
+	// --- Imagen ---
+	if needsImage {
+		img := extractImage(page, videoURL)
+		if img != "" {
+			fmt.Printf("   🖼️ Imagen: %s\n", img)
+		} else {
+			fmt.Println("   🖼️ Imagen no encontrada")
+		}
+		mu.Lock()
+		if img != "" {
+			results[videoURL].Image = img
+		}
+		saveJSONLocked()
+		mu.Unlock()
+	} else {
+		fmt.Println("   ⏭️  Imagen ya presente")
+	}
+
+	// --- M3U8 ---
+	if !needsM3U8 {
+		fmt.Println("   ⏭️  M3U8 ya presente, no se espera")
+		clearCurrent()
+		fmt.Println("   ⏳ Esperando 5s antes del siguiente video…")
+		time.Sleep(5 * time.Second)
+		return
+	}
+
 	gotIt := false
 	select {
 	case <-localNotify:
@@ -380,13 +431,11 @@ func processVideo(page *rod.Page, videoURL string, idx, total int) {
 
 	clearCurrent()
 
-	// --- 5s antes del siguiente ---
 	fmt.Println("   ⏳ Esperando 5s antes del siguiente video…")
 	time.Sleep(5 * time.Second)
 }
 
 func extractTitle(page *rod.Page) string {
-	// Intento principal: div.video-title strong
 	if el, err := page.Timeout(8 * time.Second).Element("div.video-title strong"); err == nil {
 		if t, e := el.Text(); e == nil {
 			if s := strings.TrimSpace(t); s != "" {
@@ -394,10 +443,35 @@ func extractTitle(page *rod.Page) string {
 			}
 		}
 	}
-	// Fallback: div.video-title (todo el texto)
 	if el, err := page.Timeout(2 * time.Second).Element("div.video-title"); err == nil {
 		if t, e := el.Text(); e == nil {
 			return strings.TrimSpace(t)
+		}
+	}
+	return ""
+}
+
+// extrae la URL absoluta del img dentro de div.video-pic
+func extractImage(page *rod.Page, videoURL string) string {
+	el, err := page.Timeout(8 * time.Second).Element("div.video-pic img")
+	if err != nil {
+		return ""
+	}
+	// Intenta src, luego data-src, data-original, srcset (lazy load)
+	for _, attr := range []string{"src", "data-src", "data-original", "data-lazy-src"} {
+		if v, e := el.Attribute(attr); e == nil && v != nil {
+			s := strings.TrimSpace(*v)
+			if s != "" && !strings.HasPrefix(s, "data:") {
+				return resolveURL(videoURL, s)
+			}
+		}
+	}
+	// Fallback: srcset (primera URL)
+	if v, e := el.Attribute("srcset"); e == nil && v != nil {
+		first := strings.Split(strings.TrimSpace(*v), ",")[0]
+		first = strings.Fields(first)[0]
+		if first != "" {
+			return resolveURL(videoURL, first)
 		}
 	}
 	return ""
