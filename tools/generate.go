@@ -11,18 +11,33 @@ import (
 	"strings"
 )
 
+// ---------------------------------------------------------------------------
+// Tipos
+// ---------------------------------------------------------------------------
+
+// Estructura del JSON remoto (m3u8_results.json)
 type VideoResult struct {
 	Title string   `json:"title"`
 	Image string   `json:"image"`
 	M3U8  []string `json:"m3u8"`
 }
 
+// Estructura del JSON local (v/media/local_results.json), generado por downloader.go
+type LocalResult struct {
+	Title string   `json:"title"`
+	Image string   `json:"image"`
+	M3U8  []string `json:"m3u8"`
+	Local []string `json:"local"`
+}
+
+// Datos que se inyectan en window.__VIDEO__
 type VideoItem struct {
 	ID          string   `json:"id"`
 	OriginalKey string   `json:"originalKey"`
 	Title       string   `json:"title"`
 	Image       string   `json:"image"`
-	M3U8        []string `json:"m3u8"`
+	M3U8        []string `json:"m3u8"`  // remotos (fallback)
+	Local       []string `json:"local"` // rutas locales (media/video_N.mp4)
 	URL         string   `json:"url"`
 }
 
@@ -37,11 +52,20 @@ type PageData struct {
 	JSONURL     string
 }
 
+// ---------------------------------------------------------------------------
+// Configuración
+// ---------------------------------------------------------------------------
+
 const (
-	jsonFile  = "../m3u8_results.json"
-	outputDir = "../v"
-	siteName  = "MyVideos"
+	jsonRemoteFile = "../m3u8_results.json"
+	jsonLocalFile  = "../v/media/local_results.json"
+	outputDir      = "../v"
+	siteName       = "MyVideos"
 )
+
+// ---------------------------------------------------------------------------
+// Template (idéntico al tuyo)
+// ---------------------------------------------------------------------------
 
 const videoHtmlTemplate = `<!DOCTYPE html>
 <html lang="es">
@@ -197,30 +221,25 @@ const videoHtmlTemplate = `<!DOCTYPE html>
 </body>
 </html>`
 
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
+
 func main() {
-	raw, err := os.ReadFile(jsonFile)
+	// 1) Intentar cargar el JSON LOCAL primero (con mp4 descargados)
+	items, source, err := loadItems()
 	if err != nil {
-		fmt.Printf("❌ No se pudo leer %s: %v\n", jsonFile, err)
+		fmt.Printf("❌ %v\n", err)
 		os.Exit(1)
 	}
-
-	var data map[string]VideoResult
-	if err := json.Unmarshal(raw, &data); err != nil {
-		fmt.Printf("❌ JSON inválido: %v\n", err)
-		os.Exit(1)
-	}
-
-	keys := make([]string, 0, len(data))
-	for k := range data {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	fmt.Printf("📂 Fuente de datos: %s (%d videos)\n", source, len(items))
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		fmt.Printf("❌ No se pudo crear %s/: %v\n", outputDir, err)
 		os.Exit(1)
 	}
 
+	// 2) Funciones del template
 	funcMap := template.FuncMap{
 		"safeJSON": func(v interface{}) template.JS {
 			b, _ := json.Marshal(v)
@@ -236,49 +255,131 @@ func main() {
 		os.Exit(1)
 	}
 
-	var videoList []VideoItem
-
-	for i, key := range keys {
-		video := data[key]
-		id := "video_" + strconv.Itoa(i)
-
-		title := strings.TrimSpace(video.Title)
-		if title == "" {
-			title = "Video " + strconv.Itoa(i+1)
-		}
-
-		image := strings.TrimSpace(video.Image)
-		desc := fmt.Sprintf("Ver %s online en %s.", title, siteName)
-		relURL := fmt.Sprintf("tools/v/%s.html", id)
-
-		item := VideoItem{
-			ID:          id,
-			OriginalKey: key,
-			Title:       title,
-			Image:       image,
-			M3U8:        video.M3U8,
-			URL:         relURL,
-		}
-		videoList = append(videoList, item)
+	// 3) Generar una página por video
+	var generated int
+	for _, item := range items {
+		desc := fmt.Sprintf("Ver %s online en %s.", item.Title, siteName)
+		relURL := fmt.Sprintf("tools/v/%s.html", item.ID)
 
 		page := PageData{
-			ID:          id,
-			Title:       title,
+			ID:          item.ID,
+			Title:       item.Title,
 			Description: desc,
-			Image:       image,
+			Image:       item.Image,
 			SiteName:    siteName,
 			RelativeURL: relURL,
 			JSONData:    funcMap["safeJSON"].(func(interface{}) template.JS)(item),
 			JSONURL:     "../../m3u8_results.json",
 		}
 
-		outPath := filepath.Join(outputDir, id+".html")
+		outPath := filepath.Join(outputDir, item.ID+".html")
 		f, err := os.Create(outPath)
-		if err == nil {
-			tmpl.Execute(f, page)
-			f.Close()
+		if err != nil {
+			fmt.Printf("⚠️  No se pudo crear %s: %v\n", outPath, err)
+			continue
+		}
+		if err := tmpl.Execute(f, page); err != nil {
+			fmt.Printf("⚠️  Error ejecutando template en %s: %v\n", outPath, err)
+		}
+		f.Close()
+		generated++
+	}
+
+	fmt.Printf("✅ Se regeneraron %d páginas (local + fallback remoto).\n", generated)
+}
+
+// ---------------------------------------------------------------------------
+// Carga de datos: local primero, remoto como fallback
+// ---------------------------------------------------------------------------
+
+func loadItems() ([]VideoItem, string, error) {
+	// --- Intento 1: local_results.json (con .mp4 descargados) ---
+	if raw, err := os.ReadFile(jsonLocalFile); err == nil {
+		var m map[string]LocalResult
+		if err := json.Unmarshal(raw, &m); err == nil && len(m) > 0 {
+			items := buildItemsFromLocal(m)
+			return items, jsonLocalFile, nil
 		}
 	}
 
-	fmt.Printf("✅ Se regeneraron %d páginas con Native Banner arriba y abajo en Details.\n", len(videoList))
+	// --- Intento 2: m3u8_results.json (solo remotos) ---
+	if raw, err := os.ReadFile(jsonRemoteFile); err == nil {
+		var m map[string]VideoResult
+		if err := json.Unmarshal(raw, &m); err == nil && len(m) > 0 {
+			items := buildItemsFromRemote(m)
+			return items, jsonRemoteFile, nil
+		}
+	}
+
+	return nil, "", fmt.Errorf("no se encontró %s ni %s válidos", jsonLocalFile, jsonRemoteFile)
+}
+
+// buildItemsFromLocal construye los VideoItem a partir del JSON con .mp4 locales
+func buildItemsFromLocal(m map[string]LocalResult) []VideoItem {
+	keys := sortedKeys(len(m), func(f func(string)) {
+		for k := range m {
+			f(k)
+		}
+	})
+
+	items := make([]VideoItem, 0, len(keys))
+	for i, key := range keys {
+		v := m[key]
+		id := "video_" + strconv.Itoa(i)
+
+		title := strings.TrimSpace(v.Title)
+		if title == "" {
+			title = "Video " + strconv.Itoa(i+1)
+		}
+
+		items = append(items, VideoItem{
+			ID:          id,
+			OriginalKey: key,
+			Title:       title,
+			Image:       strings.TrimSpace(v.Image),
+			M3U8:        v.M3U8,
+			Local:       v.Local,
+			URL:         fmt.Sprintf("tools/v/%s.html", id),
+		})
+	}
+	return items
+}
+
+// buildItemsFromRemote construye los VideoItem a partir del JSON remoto (sin .mp4)
+func buildItemsFromRemote(m map[string]VideoResult) []VideoItem {
+	keys := sortedKeys(len(m), func(f func(string)) {
+		for k := range m {
+			f(k)
+		}
+	})
+
+	items := make([]VideoItem, 0, len(keys))
+	for i, key := range keys {
+		v := m[key]
+		id := "video_" + strconv.Itoa(i)
+
+		title := strings.TrimSpace(v.Title)
+		if title == "" {
+			title = "Video " + strconv.Itoa(i+1)
+		}
+
+		items = append(items, VideoItem{
+			ID:          id,
+			OriginalKey: key,
+			Title:       title,
+			Image:       strings.TrimSpace(v.Image),
+			M3U8:        v.M3U8,
+			Local:       nil, // no hay locales
+			URL:         fmt.Sprintf("tools/v/%s.html", id),
+		})
+	}
+	return items
+}
+
+// sortedKeys ordena las claves de un map
+func sortedKeys(n int, iter func(func(string))) []string {
+	keys := make([]string, 0, n)
+	iter(func(k string) { keys = append(keys, k) })
+	sort.Strings(keys)
+	return keys
 }

@@ -65,17 +65,52 @@ function createCard(item) {
     return a;
 }
 
-function playM3U8(url) {
+// ---------------------------------------------------------------------------
+// Reproducción: local primero, HLS remoto como fallback
+// ---------------------------------------------------------------------------
+
+function playLocal(url) {
     destroyHls();
     const videoPlayer = document.getElementById('video-player');
     if (!videoPlayer) return;
 
+    videoPlayer.pause();
+    videoPlayer.removeAttribute('src');
+    videoPlayer.load();
+    videoPlayer.src = url;
+    videoPlayer.play().catch(() => {});
+}
+
+function playM3U8(url, fallbackList) {
+    destroyHls();
+    const videoPlayer = document.getElementById('video-player');
+    if (!videoPlayer) return;
+
+    videoPlayer.pause();
+    videoPlayer.removeAttribute('src');
+    videoPlayer.load();
+
     if (window.Hls && Hls.isSupported()) {
-        hlsInstance = new Hls();
+        hlsInstance = new Hls({ enableWorker: true });
         hlsInstance.loadSource(url);
         hlsInstance.attachMedia(videoPlayer);
+
+        hlsInstance.on(Hls.Events.ERROR, (_e, data) => {
+            if (data.fatal) {
+                console.warn('HLS fatal, intentando fallback:', data);
+                const next = (fallbackList || []).find(u => u !== url);
+                if (next) {
+                    playM3U8(next, (fallbackList || []).filter(u => u !== next));
+                } else {
+                    showToast('No se pudo reproducir este video');
+                }
+            }
+        });
     } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
         videoPlayer.src = url;
+        videoPlayer.play().catch(() => {});
+    } else {
+        showToast('Tu navegador no soporta HLS');
     }
 }
 
@@ -94,22 +129,55 @@ function renderDetails(video) {
     if (!qualityButtons) return;
 
     qualityButtons.innerHTML = '';
-    if (!video.m3u8 || video.m3u8.length === 0) return;
 
-    video.m3u8.forEach((url, i) => {
+    const locals = Array.isArray(video.local) ? video.local.filter(Boolean) : [];
+    const remotes = Array.isArray(video.m3u8) ? video.m3u8.filter(Boolean) : [];
+
+    if (locals.length === 0 && remotes.length === 0) {
+        const msg = document.createElement('span');
+        msg.style.color = '#888';
+        msg.textContent = 'Sin fuentes disponibles';
+        qualityButtons.appendChild(msg);
+        return;
+    }
+
+    const options = [];
+    locals.forEach((src, i) => {
+        options.push({ label: `Local ${i + 1}`, type: 'local', src });
+    });
+    remotes.forEach((src, i) => {
+        options.push({ label: `HLS ${i + 1}`, type: 'hls', src });
+    });
+
+    function activate(opt, btn) {
+        qualityButtons.querySelectorAll('.btn-quality').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (opt.type === 'local') {
+            playLocal(opt.src);
+        } else {
+            playM3U8(opt.src, remotes);
+        }
+    }
+
+    options.forEach((opt, i) => {
         const btn = document.createElement('button');
         btn.className = `btn-quality ${i === 0 ? 'active' : ''}`;
-        btn.textContent = `Opción ${i + 1}`;
-        btn.onclick = () => {
-            qualityButtons.querySelectorAll('.btn-quality').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            playM3U8(url);
-        };
+        btn.textContent = opt.label;
+        btn.onclick = () => activate(opt, btn);
         qualityButtons.appendChild(btn);
     });
 
-    playM3U8(video.m3u8[0]);
+    // Autoplay del primero (local si existe)
+    if (options[0].type === 'local') {
+        playLocal(options[0].src);
+    } else {
+        playM3U8(options[0].src, remotes);
+    }
 }
+
+// ---------------------------------------------------------------------------
+// Home / filtros / paginación (sin cambios)
+// ---------------------------------------------------------------------------
 
 function getFilteredVideos() {
     let items = Object.values(videosData);
@@ -268,6 +336,19 @@ async function initVideo() {
     if (!video) return;
 
     renderDetails(video);
+
+    // Compartir
+    const shareBtn = document.getElementById('share-btn');
+    if (shareBtn) {
+        shareBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(location.href);
+                showToast('Enlace copiado');
+            } catch (e) {
+                showToast('No se pudo copiar');
+            }
+        });
+    }
 
     try {
         const res = await fetch(getJsonUrl());
